@@ -30,27 +30,27 @@ def import_data(root, file_name, batch_size=1):
 Define target decoding DATA & SIGNAL
 '''
 def define_decoding_data(data, neural_sig, decoding_sig, signal, decoding_labels):
-    decoding_sig = decoding_sig    # Name of decoding Sig ('EMG/KIN')
+    # decoding_signal = Name of decoding Sig ('EMG/KIN')
     neural_dat = data[neural_sig]
-    dec_sig_dat = data[decoding_sig][:,signal]
+    dec_dat = data[decoding_sig][:,signal]
     if decoding_labels:
         sigs_labels = data[decoding_labels][0][signal]   # Labels
 
-    return neural_dat, dec_sig_dat, sigs_labels
+    return neural_dat, dec_dat, sigs_labels
 
 '''
 Prepare data to feed into TCN.
-Returns Neural data as [Samples * Channels * Seq_length], Dec_signal [Samples * Seq_length]
+Returns Neural data as [Samples * Channels * Seq_length], dec_datnal [Samples * Seq_length]
 '''
-def prepare_TCN_data(neural_sig, dec_sig, seq_length):
+def prepare_TCN_data(neural_dat, dec_dat, seq_length):
     # +1 Because the last neural data point counts for the same time prediction
-    samples = neural_sig.shape[0] - seq_length +1
-    channels = neural_sig.shape[1]
+    samples = neural_dat.shape[0] - seq_length +1
+    channels = neural_dat.shape[1]
 
-    reshaped_neural_sig = np.zeros([samples, seq_length, channels])
-    for i in xrange(neural_sig.shape[0] - seq_length + 1):
-        reshaped_neural_sig[i] = neural_sig[ i:i+seq_length, :]
+    reshaped_neural_dat = np.zeros([samples, seq_length, channels])
+    for i in xrange(neural_dat.shape[0] - seq_length + 1):
+        reshaped_neural_dat[i] = neural_dat[ i:i+seq_length, :]
     # Decoding signal responds to the 'seq_length' previous neural data bins
-    reshaped_decoding_sig = dec_sig[seq_length-1 :]
+    reshaped_decoding_sig = dec_dat[seq_length-1 :]
 
-    return reshaped_neural_sig, reshaped_decoding_sig
+    return reshaped_neural_dat, reshaped_decoding_sig

@@ -20,8 +20,8 @@ parser.add_argument('--dropout', type=float, default=0.05,
                     help='dropout applied to layers (default: 0.05)')
 parser.add_argument('--clip', type=float, default=-1,
                     help='gradient clip, -1 means no clip (default: -1)')
-parser.add_argument('--epochs', type=int, default=10,
-                    help='upper epoch limit (default: 10)')
+parser.add_argument('--epochs', type=int, default=6,
+                    help='upper epoch limit (default: 6)')
 parser.add_argument('--ksize', type=int, default=7,
                     help='kernel size (default: 7)')
 parser.add_argument('--levels', type=int, default=8,
@@ -46,6 +46,7 @@ if not torch.cuda.is_available():
         print("WARNING: You do not have a CUDA device, changing to run model without --cuda")
         args.cuda = False
 
+print(args)
 
 ############################################################
 # IMPORT DATA
@@ -61,52 +62,51 @@ train_prop = 0.90               # Percentage of training data
 seq_length = 50                 # Num bins to look at before
 
 data = import_data(data_dir, file_name)
-neural_sig, dec_sig, dec_label = define_decoding_data(data, neural_sig, decoding_sig, signal, decoding_labels)
+neural_dat, dec_dat, dec_label = define_decoding_data(data, neural_sig, decoding_sig, signal, decoding_labels)
 
-
-# Split train & test data
-'''TODO: Split train and test data after having prepared it for TCN.
-To make cross validation easier and not loose the prev_bins twice'''
-train_idx = int(train_prop * neural_sig.shape[0])
-
-train_neural_sig = neural_sig[0:train_idx]
-train_dec_sig = dec_sig[0:train_idx]
-
-test_neural_sig = neural_sig[train_idx+1 :]
-test_dec_sig = dec_sig[train_idx+1 :]
-
-# Prepare data to feed into TCN
-x_train, y_train = prepare_TCN_data(train_neural_sig, train_dec_sig, seq_length)
-x_test, y_test = prepare_TCN_data(test_neural_sig, test_dec_sig, seq_length)
-
-# Reshape as (N, channels, sample_length)
-x_train, x_test = x_train.transpose(0,2,1), x_test.transpose(0,2,1)
-
-# Create torch Float Tensors
-x_train, y_train = torch.from_numpy(x_train).float(), torch.from_numpy(y_train)
-x_test, y_test = torch.from_numpy(x_test).float(), torch.from_numpy(y_test)
 
 ############################################################
+'''Prepare data for TCN.
+Then we split it into train and test data'''
 
-# ############################################################
+# Prepare data to feed into TCN:
+
+tcn_x, tcn_y = prepare_TCN_data(neural_dat, dec_dat, seq_length)
+# Reshape as (N, channels, sample_length)
+tcn_x = tcn_x.transpose(0,2,1)
+# Create torch Float Tensors
+tcn_x, tcn_y = torch.from_numpy(tcn_x).float(), torch.from_numpy(tcn_y)
+
+
+# Now split it into train and test data:
+
+train_idx = int(train_prop * tcn_x.shape[0])
+
+x_train = tcn_x[0:train_idx]
+y_train = tcn_y[0:train_idx]
+
+x_test = tcn_x[train_idx+1 :]
+y_test = tcn_y[train_idx+1 :]
+
+if args.cuda:
+    print('Using CUDA')
+    model.cuda()
+    x_train, x_test, y_train, y_test = x_train.cuda(), x_test.cuda(), y_train.cuda(), y_test.cuda()
+
+##############################################################
+
+##############################################################
 batch_size = args.batch_size
 n_classes = 1    # Output size is 1 for normal regression
-input_channels = neural_sig.shape[1]
+input_channels = neural_dat.shape[1]
 epochs = args.epochs
 steps = 0
-
-print(args)
 
 channel_sizes = [args.nhid] * args.levels
 kernel_size = args.ksize
 
 
 model = TCN(input_channels, n_classes, channel_sizes, kernel_size=kernel_size, dropout=args.dropout)
-
-if args.cuda:
-    print('Using CUDA')
-    model.cuda()
-    x_train, x_test, y_train, y_test = x_train.cuda(), x_test.cuda(), y_train.cuda(), y_test.cuda()
 
 
 lr = args.lr
@@ -117,6 +117,9 @@ optimizer = getattr(optim, args.optim)(model.parameters(), lr=lr)
 def train(ep):
     global steps
     train_loss = []
+    train_err = []
+    test_err = []
+    running_test_err = []
     # criterion = nn.MSELoss()
     model.train()
     for i in xrange(x_train.shape[0]):
@@ -140,12 +143,32 @@ def train(ep):
         optimizer.step()
         if (i%100 == 0):
             _, sq_err = test()
-            print('Error:{}'.format(sq_err))
+            running_test_err.append(sq_err)
+            print('VAF:{}'.format(sq_err))
 
     train_loss.append(loss)
-    print('Train Epoch: {} \tLoss: {}'.format(ep, train_loss[-1]))
+    train_err.append(predict(x_train, y_train)[1])
+    test_err.append(predict(x_test, y_test)[1])
+    print('Train Epoch: {} \tLoss: {}, train VAF: {}, test VAF {}'.format(ep, train_loss[-1], train_err[-1], test_err[-1]))
 
 
+# Evaluate your model performance on ANY data
+def predict(X, Y):
+    model.eval()
+    pred = []
+    for i in xrange(X.shape[0]):
+        data, target = X[i], torch.FloatTensor([Y[i]])
+        if args.cuda: data, target = data.cuda(), target.cuda()
+
+        data, target = Variable(data, volatile=True), Variable(target)
+        if (batch_size == 1): data = data.unsqueeze(0) # TCN works with a 3D tensor
+
+        output = model(data)
+        pred.append(output.data.numpy()[0,0])
+    sq_err = get_corr(Y, pred)
+    return pred, sq_err
+
+# Evaluate your model performance on TESTING data
 def test():
     model.eval()
     pred = []
@@ -156,21 +179,18 @@ def test():
         data, target = Variable(data, volatile=True), Variable(target)
         if (batch_size == 1): data = data.unsqueeze(0) # TCN works with a 3D tensor
 
-
-        # IP.embed()
         output = model(data)
-
-        # test_loss += F.nll_loss(output, target, size_average=False).data[0]
         pred.append(output.data.numpy()[0,0])
 
-    sq_err = np.sum(np.sqrt((y_test.numpy() - pred)**2))
+    sq_err = get_corr(y_test, pred)
     return pred, sq_err
 
-    # test_loss /= len(test_loader.dataset)
-    # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-    #     test_loss, correct, len(test_loader.dataset),
-    #     100. * correct / len(test_loader.dataset)))
-    # return test_loss
+# Variance Accounted For Correlation
+def get_corr(y_test, y_test_pred):
+    y_test = y_test.cpu().numpy()
+    y_mean = np.mean(y_test)
+    r2 = 1-np.sum((y_test_pred-y_test)**2)/np.sum((y_test-y_mean)**2)
+    return r2
 
 
 if __name__ == "__main__":
