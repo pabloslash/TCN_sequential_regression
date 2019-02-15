@@ -54,3 +54,8 @@ def prepare_TCN_data(neural_dat, dec_dat, seq_length):
     reshaped_decoding_sig = dec_dat[seq_length-1 :]
 
     return reshaped_neural_dat, reshaped_decoding_sig
+
+'''Shuffle Torch Tensor. Shuffle inputs to the convNet. Inputing sequential values disrupts learning.'''
+def shuffle_inputs(X,Y):
+    rand_idx = torch.randperm(X.shape[0])
+    return X[rand_idx], Y[rand_idx]

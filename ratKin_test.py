@@ -8,6 +8,8 @@ from model import TCN
 import numpy as np
 import argparse
 import os
+import random
+os.environ['QT_QPA_PLATFORM']='offscreen' #Needed when ssh to avoid display on screen
 
 import IPython as IP
 
@@ -20,7 +22,7 @@ parser.add_argument('--dropout', type=float, default=0.05,
                     help='dropout applied to layers (default: 0.05)')
 parser.add_argument('--clip', type=float, default=-1,
                     help='gradient clip, -1 means no clip (default: -1)')
-parser.add_argument('--epochs', type=int, default=6,
+parser.add_argument('--epochs', type=int, default=10,
                     help='upper epoch limit (default: 6)')
 parser.add_argument('--ksize', type=int, default=7,
                     help='kernel size (default: 7)')
@@ -28,7 +30,7 @@ parser.add_argument('--levels', type=int, default=8,
                     help='# of levels (default: 8)')
 parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                     help='report interval (default: 100')
-parser.add_argument('--lr', type=float, default=2e-3,
+parser.add_argument('--lr', type=float, default=2e-6,
                     help='initial learning rate (default: 2e-3)')
 parser.add_argument('--optim', type=str, default='Adam',
                     help='optimizer to use (default: Adam)')
@@ -46,6 +48,7 @@ if not torch.cuda.is_available():
         print("WARNING: You do not have a CUDA device, changing to run model without --cuda")
         args.cuda = False
 
+# args.cuda = False
 print(args)
 
 ############################################################
@@ -59,7 +62,7 @@ decoding_sig = 'KINdat'         # Usually: 'EMGdat' / 'KINdat' (!!string)
 decoding_labels = 'KINlabels'   # Usually: 'EMGlabels' / 'KINlabels' (!!string) -> Leave as Empty string otherwise
 signal = 3                      # EMG/Kinematic column to decode (FCR,FCU,ECR etc.)
 train_prop = 0.90               # Percentage of training data
-seq_length = 50                 # Num bins to look at before
+seq_length = 5                 # Num bins to look at before
 
 data = import_data(data_dir, file_name)
 neural_dat, dec_dat, dec_label = define_decoding_data(data, neural_sig, decoding_sig, signal, decoding_labels)
@@ -74,24 +77,18 @@ Then we split it into train and test data'''
 tcn_x, tcn_y = prepare_TCN_data(neural_dat, dec_dat, seq_length)
 # Reshape as (N, channels, sample_length)
 tcn_x = tcn_x.transpose(0,2,1)
-# Create torch Float Tensors
+# Create torch Float Tensor
 tcn_x, tcn_y = torch.from_numpy(tcn_x).float(), torch.from_numpy(tcn_y)
 
-
 # Now split it into train and test data:
-
 train_idx = int(train_prop * tcn_x.shape[0])
 
 x_train = tcn_x[0:train_idx]
 y_train = tcn_y[0:train_idx]
+x_train, y_train = shuffle_inputs(x_train, y_train)
 
 x_test = tcn_x[train_idx+1 :]
 y_test = tcn_y[train_idx+1 :]
-
-if args.cuda:
-    print('Using CUDA')
-    model.cuda()
-    x_train, x_test, y_train, y_test = x_train.cuda(), x_test.cuda(), y_train.cuda(), y_test.cuda()
 
 ##############################################################
 
@@ -107,7 +104,10 @@ kernel_size = args.ksize
 
 
 model = TCN(input_channels, n_classes, channel_sizes, kernel_size=kernel_size, dropout=args.dropout)
-
+if args.cuda:
+    print('Using CUDA')
+    model.cuda()
+    x_train, x_test, y_train, y_test = x_train.cuda(), x_test.cuda(), y_train.cuda(), y_test.cuda()
 
 lr = args.lr
 optimizer = getattr(optim, args.optim)(model.parameters(), lr=lr)
@@ -122,35 +122,38 @@ def train(ep):
     running_test_err = []
     # criterion = nn.MSELoss()
     model.train()
-    for i in xrange(x_train.shape[0]):
-        data, target = x_train[i], torch.FloatTensor([y_train[i]])
-        if args.cuda: data, target = data.cuda(), target.cuda()
-        # print('Training')
-        # IP.embed()
+    for e in xrange(ep):
+        for i in xrange(x_train.shape[0]):
+            data, target = x_train[i], torch.FloatTensor([y_train[i]])
+            if args.cuda: data, target = data.cuda(), target.cuda()
+            # print('Training')
+            # IP.embed()
 
-        data, target = Variable(data), Variable(target)
-        if (batch_size == 1): data = data.unsqueeze(0) # TCN works with a 3D tensor
+            data, target = Variable(data), Variable(target)
+            if (batch_size == 1): data = data.unsqueeze(0) # TCN works with a 3D tensor
 
-        optimizer.zero_grad()
-        output = model(data)  # Run Network
+            optimizer.zero_grad()
+            output = model(data)  # Run Network
 
-        # print('Loss')
-        # IP.embed()
-        loss = F.mse_loss(output, target)  # MSE loss. Take sqrt if you want RMS.
-        loss.backward()
-        if args.clip > 0:
-            torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
-        optimizer.step()
-        if (i%100 == 0):
-            _, sq_err = test()
-            running_test_err.append(sq_err)
-            print('VAF:{}'.format(sq_err))
+            # print('Loss')
+            # IP.embed()
+            loss = F.mse_loss(output, target)  # MSE loss. Take sqrt if you want RMS.
+            loss.backward()
+            if args.clip > 0:
+                torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
+            optimizer.step()
+            if (i%100 == 0):
+                _, sq_err = predict(x_test, y_test)
+                running_test_err.append(sq_err)
+                print('VAF:{}'.format(sq_err))
+                train_loss.append(loss.data.cpu().numpy()) #Save running loss
 
-    train_loss.append(loss)
-    train_err.append(predict(x_train, y_train)[1])
-    test_err.append(predict(x_test, y_test)[1])
-    print('Train Epoch: {} \tLoss: {}, train VAF: {}, test VAF {}'.format(ep, train_loss[-1], train_err[-1], test_err[-1]))
 
+        train_err.append(predict(x_train, y_train)[1])
+        test_err.append(predict(x_test, y_test)[1])
+        print('Train Epoch: {} \tLoss: {}, train VAF: {}, test VAF {}'.format(ep, train_loss[-1], train_err[-1], test_err[-1]))
+
+    return train_loss, train_err, running_test_err, test_err
 
 # Evaluate your model performance on ANY data
 def predict(X, Y):
@@ -164,7 +167,7 @@ def predict(X, Y):
         if (batch_size == 1): data = data.unsqueeze(0) # TCN works with a 3D tensor
 
         output = model(data)
-        pred.append(output.data.numpy()[0,0])
+        pred.append(output.data.cpu().numpy()[0,0])
     sq_err = get_corr(Y, pred)
     return pred, sq_err
 
@@ -180,7 +183,7 @@ def test():
         if (batch_size == 1): data = data.unsqueeze(0) # TCN works with a 3D tensor
 
         output = model(data)
-        pred.append(output.data.numpy()[0,0])
+        pred.append(output.data.cpu().numpy()[0,0])
 
     sq_err = get_corr(y_test, pred)
     return pred, sq_err
@@ -191,6 +194,39 @@ def get_corr(y_test, y_test_pred):
     y_mean = np.mean(y_test)
     r2 = 1-np.sum((y_test_pred-y_test)**2)/np.sum((y_test-y_mean)**2)
     return r2
+
+
+
+
+def save_model():
+    model_name = 'saved_models/'+ file_name[12] + '.mat'
+    save_dir = os.getcwd() + '/' + model_name
+    torch.save(model.state_dict(), save_dir)  #SAVE
+
+
+
+def plot_after_predict(X, Y):
+    # pred, sq_err = predict(X, Y)
+    plt.figure()
+    plt.plot(Y, label = dec_label[0])
+    plt.plot(pred, label = 'Predicted Signal')
+    plt.xlabel('Bins')
+    plt.ylabel('{} height'.format(dec_label[0]))
+    plt.legend()
+    plt.title('Actual and predicted kinematic signal, VAF = {}'.format(sq_err))
+    plt.show(block=False)
+
+def plot_actual_vs_predict(y, y_pred, sq_err=[]):
+    # pred, sq_err = predict(X, Y)
+    plt.figure()
+    plt.plot(y, label = dec_label[0])
+    plt.plot(y_pred, label = 'Predicted Signal')
+    plt.xlabel('Bins')
+    plt.ylabel('{} height'.format(dec_label[0]))
+    plt.legend()
+    plt.title('Actual and predicted kinematic signal, VAF = {}'.format(sq_err))
+    plt.show(block=False)
+
 
 
 if __name__ == "__main__":

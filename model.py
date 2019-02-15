@@ -17,8 +17,8 @@ class TCN(nn.Module):
         # print('Forward pass of TCN')
         # IP.embed()
         y1 = self.tcn(inputs)  # input should have dimension (batch, channels, seq_length)
-        # print('Final Step TCN forward')
-        # IP.embed()
+        print('Final Step TCN forward')
+        IP.embed()
         o = self.linear(y1[:, :, -1])
         return self.relu(o) # Maybe Relu helps to discard negative EMG values. Otherwise return o
         # return F.Linear(o, dim=1)
