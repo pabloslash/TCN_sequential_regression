@@ -22,8 +22,8 @@ parser.add_argument('--dropout', type=float, default=0.05,
                     help='dropout applied to layers (default: 0.05)')
 parser.add_argument('--clip', type=float, default=-1,
                     help='gradient clip, -1 means no clip (default: -1)')
-parser.add_argument('--epochs', type=int, default=10,
-                    help='upper epoch limit (default: 6)')
+parser.add_argument('--epochs', type=int, default=30,
+                    help='upper epoch limit (default: 30)')
 parser.add_argument('--ksize', type=int, default=7,
                     help='kernel size (default: 7)')
 parser.add_argument('--levels', type=int, default=8,
@@ -48,7 +48,6 @@ if not torch.cuda.is_available():
         print("WARNING: You do not have a CUDA device, changing to run model without --cuda")
         args.cuda = False
 
-# args.cuda = False
 print(args)
 
 ############################################################
@@ -201,14 +200,10 @@ def get_corr(y_test, y_test_pred):
     r2 = 1-np.sum((y_test_pred-y_test)**2)/np.sum((y_test-y_mean)**2)
     return r2
 
-
-
-
 def save_model():
     model_name = 'saved_models/'+ file_name[12] + '.mat'
     save_dir = os.getcwd() + '/' + model_name
     torch.save(model.state_dict(), save_dir)  #SAVE
-
 
 
 def plot_after_predict(X, Y):
@@ -232,7 +227,6 @@ def plot_actual_vs_predict(y, y_pred, sq_err=[]):
     plt.legend()
     plt.title('Actual and predicted kinematic signal, VAF = {}'.format(sq_err))
     plt.show(block=False)
-
 
 
 if __name__ == "__main__":

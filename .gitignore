@@ -1,0 +1,6 @@
+# Don't track the content of these foldes
+
+# Don't track these files
+model.pyc
+tcn.pyc
+utils.pyc
