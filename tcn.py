@@ -7,11 +7,13 @@ import IPython as IP
 class Chomp1d(nn.Module):
     def __init__(self, chomp_size):
         super(Chomp1d, self).__init__()
+        # print('Class of Chomp1d')
+        # IP.embed()
         self.chomp_size = chomp_size
 
     def forward(self, x):
-        # print('Forward of Chomp1d')
-        # IP.embed()
+        print('Forward of Chomp1d')
+        IP.embed()
         return x[:, :, :-self.chomp_size].contiguous() #Chop last 'padding#' elements
 
 
@@ -32,6 +34,7 @@ class TemporalBlock(nn.Module):
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)
 
+        # print('Temp Block class')
         # IP.embed()
         self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1, self.dropout1,
                                  self.conv2, self.chomp2, self.relu2, self.dropout2)
@@ -47,21 +50,21 @@ class TemporalBlock(nn.Module):
 
     def forward(self, x):
 
-        # print('Forward pass of Temporal Block')
-        # IP.embed()
+        print('Forward pass of Temporal Block')
+        IP.embed()
 
-        out = self.net(x)
-        # a = x
-        # a = self.conv1(a)
-        # a = self.chomp1(a)
-        #
-        # a = self.relu1(a)
-        #
-        # a = self.dropout1(a)
-        # a = self.conv2(a)
-        # a = self.chomp2(a)
-        # a = self.relu2(a)
-        # a = self.dropout2(a)
+        # out = self.net(x)
+        a = x
+        a = self.conv1(a)
+        a = self.chomp1(a)
+
+        a = self.relu1(a)
+
+        a = self.dropout1(a)
+        a = self.conv2(a)
+        a = self.chomp2(a)
+        a = self.relu2(a)
+        a = self.dropout2(a)
 
 
         res = x if self.downsample is None else self.downsample(x)
@@ -72,7 +75,6 @@ class TemporalConvNet(nn.Module):
     def __init__(self, num_inputs, num_channels, kernel_size=2, dropout=0.2):
         super(TemporalConvNet, self).__init__()
 
-        # IP.embed()
         layers = []
         num_levels = len(num_channels)
         for i in range(num_levels):
@@ -80,11 +82,15 @@ class TemporalConvNet(nn.Module):
             dilation_size = 2 ** i
             in_channels = num_inputs if i == 0 else num_channels[i-1]
             out_channels = num_channels[i]
+
+            # print('TempConvNet class')
+            # IP.embed()
+
             layers += [TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=dilation_size,
                                      padding=(kernel_size-1) * dilation_size, dropout=dropout)]
 
-        # print('tcn initialized')
-        # IP.embed()
+        print('tcn initialized')
+        IP.embed()
         self.network = nn.Sequential(*layers)
 
     def forward(self, x):

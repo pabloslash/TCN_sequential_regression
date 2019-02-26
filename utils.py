@@ -7,8 +7,6 @@ from scipy import stats
 import os
 import IPython as IP
 
-
-
 def import_data(root, file_name, batch_size=1):
     '''
     Will load NEURAL + DECODING sig (EMG/KIN) from .mat file with data stored in matrix form.
@@ -25,6 +23,7 @@ def import_data(root, file_name, batch_size=1):
         os.mkdir(animal_dir_save)
 
     return data
+
 
 '''
 Define target decoding DATA & SIGNAL

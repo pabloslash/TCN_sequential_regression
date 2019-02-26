@@ -33,7 +33,6 @@ def TCN_receptive_Field(filter_size, conv_layers):
         d[0,1] = k
 
         for i in  range(2, CL):
-            # IP.embed()
             d[0,i] = k + (k-1) * (d[0,i-1]-1) + (k-1)*np.sum(d[0,0:i-1])
 
         receptive_field = k + (k-1) * (d[0,-1]-1) + (k-1)*np.sum(d[0,0:-1])
