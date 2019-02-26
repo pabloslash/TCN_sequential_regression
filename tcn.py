@@ -12,8 +12,8 @@ class Chomp1d(nn.Module):
         self.chomp_size = chomp_size
 
     def forward(self, x):
-        print('Forward of Chomp1d')
-        IP.embed()
+        # print('Forward of Chomp1d')
+        # IP.embed()
         return x[:, :, :-self.chomp_size].contiguous() #Chop last 'padding#' elements
 
 
@@ -24,20 +24,25 @@ class TemporalBlock(nn.Module):
 
         self.conv1 = weight_norm(nn.Conv1d(n_inputs, n_outputs, kernel_size,
                                            stride=stride, padding=padding, dilation=dilation))
-        self.chomp1 = Chomp1d(padding)
+        # self.chomp1 = Chomp1d(padding)
+        self.chomp1 = Chomp1d(2)
+
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
 
         self.conv2 = weight_norm(nn.Conv1d(n_outputs, n_outputs, kernel_size,
                                            stride=stride, padding=padding, dilation=dilation))
-        self.chomp2 = Chomp1d(padding)
+        # self.chomp2 = Chomp1d(padding)
+        self.chomp2 = Chomp1d(2)
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)
 
         # print('Temp Block class')
         # IP.embed()
-        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1, self.dropout1,
-                                 self.conv2, self.chomp2, self.relu2, self.dropout2)
+        # self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1, self.dropout1,
+        #                          self.conv2, self.chomp2, self.relu2, self.dropout2)
+        self.net = nn.Sequential(self.conv1, self.relu1, self.dropout1,
+                                 self.conv2, self.relu2, self.dropout2)
         self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None   # Residuals
         self.relu = nn.ReLU()
         self.init_weights()
@@ -49,22 +54,22 @@ class TemporalBlock(nn.Module):
             self.downsample.weight.data.normal_(0, 0.01)
 
     def forward(self, x):
+        #
+        # print('Forward pass of Temporal Block')
+        # IP.embed()
 
-        print('Forward pass of Temporal Block')
-        IP.embed()
-
-        # out = self.net(x)
-        a = x
-        a = self.conv1(a)
-        a = self.chomp1(a)
-
-        a = self.relu1(a)
-
-        a = self.dropout1(a)
-        a = self.conv2(a)
-        a = self.chomp2(a)
-        a = self.relu2(a)
-        a = self.dropout2(a)
+        out = self.net(x)
+        # a = x
+        # a = self.conv1(a)
+        # a = self.chomp1(a)
+        #
+        # a = self.relu1(a)
+        #
+        # a = self.dropout1(a)
+        # a = self.conv2(a)
+        # a = self.chomp2(a)
+        # a = self.relu2(a)
+        # a = self.dropout2(a)
 
 
         res = x if self.downsample is None else self.downsample(x)
@@ -79,7 +84,8 @@ class TemporalConvNet(nn.Module):
         num_levels = len(num_channels)
         for i in range(num_levels):
             print('i = {}'.format(i))
-            dilation_size = 2 ** i
+            # dilation_size = 2 ** i
+            dilation_size = i + 1
             in_channels = num_inputs if i == 0 else num_channels[i-1]
             out_channels = num_channels[i]
 
@@ -87,10 +93,8 @@ class TemporalConvNet(nn.Module):
             # IP.embed()
 
             layers += [TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=dilation_size,
-                                     padding=(kernel_size-1) * dilation_size, dropout=dropout)]
+                                     padding=(kernel_size-4) * dilation_size, dropout=dropout)]
 
-        print('tcn initialized')
-        IP.embed()
         self.network = nn.Sequential(*layers)
 
     def forward(self, x):

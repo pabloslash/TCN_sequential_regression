@@ -14,8 +14,8 @@ os.environ['QT_QPA_PLATFORM']='offscreen' #Needed when ssh to avoid display on s
 import IPython as IP
 
 parser = argparse.ArgumentParser(description='Sequence Regression - Rat Kinematic Data')
-parser.add_argument('--batch_size', type=int, default=1, metavar='N',
-                    help='batch size (default: 1)')
+parser.add_argument('--batch_size', type=int, default=15, metavar='N',
+                    help='batch size (default: 15)')
 parser.add_argument('--cuda', action='store_false',
                     help='use CUDA (default: False)')
 parser.add_argument('--dropout', type=float, default=0.05,
@@ -30,7 +30,7 @@ parser.add_argument('--levels', type=int, default=8,
                     help='# of levels (default: 8)')
 parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                     help='report interval (default: 100')
-parser.add_argument('--lr', type=float, default=2e-6,
+parser.add_argument('--lr', type=float, default=2e-5,
                     help='initial learning rate (default: 2e-3)')
 parser.add_argument('--optim', type=str, default='Adam',
                     help='optimizer to use (default: Adam)')
@@ -62,7 +62,7 @@ decoding_sig = 'KINdat'         # Usually: 'EMGdat' / 'KINdat' (!!string)
 decoding_labels = 'KINlabels'   # Usually: 'EMGlabels' / 'KINlabels' (!!string) -> Leave as Empty string otherwise
 signal = 3                      # EMG/Kinematic column to decode (FCR,FCU,ECR etc.)
 train_prop = 0.90               # Percentage of training data
-seq_length = 5                 # Num bins to look at before
+seq_length = 50                 # Num bins to look at before
 
 data = import_data(data_dir, file_name)
 neural_dat, dec_dat, dec_label = define_decoding_data(data, neural_sig, decoding_sig, signal, decoding_labels)
@@ -73,12 +73,15 @@ neural_dat, dec_dat, dec_label = define_decoding_data(data, neural_sig, decoding
 Then we split it into train and test data'''
 
 # Prepare data to feed into TCN:
+batch_size = args.batch_size
 
-tcn_x, tcn_y = prepare_TCN_data(neural_dat, dec_dat, seq_length)
+tcn_x, tcn_y = prepare_TCN_data(neural_dat, dec_dat, seq_length, batch_size)
+
 # Reshape as (N, channels, sample_length)
-tcn_x = tcn_x.transpose(0,2,1)
+if batch_size == 1: tcn_x = tcn_x.transpose(0,2,1)
+else: tcn_x = tcn_x.transpose(0,1,3,2)
 # Create torch Float Tensor
-tcn_x, tcn_y = torch.from_numpy(tcn_x).float(), torch.from_numpy(tcn_y)
+tcn_x, tcn_y = torch.from_numpy(tcn_x).float(), torch.from_numpy(tcn_y).float()
 
 # Now split it into train and test data:
 train_idx = int(train_prop * tcn_x.shape[0])
@@ -93,7 +96,6 @@ y_test = tcn_y[train_idx+1 :]
 ##############################################################
 
 ##############################################################
-batch_size = args.batch_size
 n_classes = 1    # Output size is 1 for normal regression
 input_channels = neural_dat.shape[1]
 epochs = args.epochs
@@ -121,13 +123,16 @@ def train(ep):
     test_err = []
     running_test_err = []
     # criterion = nn.MSELoss()
+
     model.train()
     for e in xrange(ep):
         for i in xrange(x_train.shape[0]):
-            data, target = x_train[i], torch.FloatTensor([y_train[i]])
-            if args.cuda: data, target = data.cuda(), target.cuda()
+
             # print('Training')
             # IP.embed()
+
+            data, target = x_train[i], y_train[i]
+            if args.cuda: data, target = data.cuda(), target.cuda()
 
             data, target = Variable(data), Variable(target)
             if (batch_size == 1): data = data.unsqueeze(0) # TCN works with a 3D tensor
@@ -135,8 +140,6 @@ def train(ep):
             optimizer.zero_grad()
             output = model(data)  # Run Network
 
-            # print('Loss')
-            # IP.embed()
             loss = F.mse_loss(output, target)  # MSE loss. Take sqrt if you want RMS.
             loss.backward()
             if args.clip > 0:
@@ -160,14 +163,17 @@ def predict(X, Y):
     model.eval()
     pred = []
     for i in xrange(X.shape[0]):
-        data, target = X[i], torch.FloatTensor([Y[i]])
+
+        data, target = X[i], Y[i]
         if args.cuda: data, target = data.cuda(), target.cuda()
 
         data, target = Variable(data, volatile=True), Variable(target)
         if (batch_size == 1): data = data.unsqueeze(0) # TCN works with a 3D tensor
 
         output = model(data)
-        pred.append(output.data.cpu().numpy()[0,0])
+        if (batch_size != 1): output = output.squeeze(1)
+        pred.append(output.data.cpu().numpy())
+
     sq_err = get_corr(Y, pred)
     return pred, sq_err
 
@@ -230,7 +236,7 @@ def plot_actual_vs_predict(y, y_pred, sq_err=[]):
 
 
 if __name__ == "__main__":
-    for epoch in range(1, epochs+1):
+    for epoch in range(1, epochs+25):
         train(epoch)
         test()
         if epoch % 10 == 0:

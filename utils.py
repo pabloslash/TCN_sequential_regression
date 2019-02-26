@@ -41,8 +41,9 @@ def define_decoding_data(data, neural_sig, decoding_sig, signal, decoding_labels
 Prepare data to feed into TCN.
 Returns Neural data as [Samples * Channels * Seq_length], dec_datnal [Samples * Seq_length]
 '''
-def prepare_TCN_data(neural_dat, dec_dat, seq_length):
+def prepare_TCN_data(neural_dat, dec_dat, seq_length, batch_size):
     # +1 Because the last neural data point counts for the same time prediction
+
     samples = neural_dat.shape[0] - seq_length +1
     channels = neural_dat.shape[1]
 
@@ -52,7 +53,18 @@ def prepare_TCN_data(neural_dat, dec_dat, seq_length):
     # Decoding signal responds to the 'seq_length' previous neural data bins
     reshaped_decoding_sig = dec_dat[seq_length-1 :]
 
-    return reshaped_neural_dat, reshaped_decoding_sig
+    #Reorganize in batches
+    if (batch_size != 1):
+        batches = reshaped_decoding_sig.shape[0]/ batch_size
+        batched_neural_dat = np.zeros([batches, batch_size, reshaped_neural_dat.shape[1], reshaped_neural_dat.shape[2]])
+        batched_decoding_sig = np.zeros([batches, batch_size])
+        for batch in xrange(batches):
+            batched_neural_dat[batch] = reshaped_neural_dat[batch*batch_size : batch*batch_size + batch_size, :, :]
+            batched_decoding_sig[batch] = reshaped_decoding_sig[batch*batch_size : batch*batch_size + batch_size]
+
+    else: batched_neural_dat, batched_decoding_sig = reshaped_neural_dat, reshaped_decoding_sig
+
+    return batched_neural_dat, batched_decoding_sig
 
 '''Shuffle Torch Tensor. Shuffle inputs to the convNet. Inputing sequential values disrupts learning.'''
 def shuffle_inputs(X,Y):
