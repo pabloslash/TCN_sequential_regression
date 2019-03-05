@@ -9,6 +9,8 @@ import numpy as np
 import argparse
 import os
 import random
+import datetime
+import time
 os.environ['QT_QPA_PLATFORM']='offscreen' #Needed when ssh to avoid display on screen
 
 import IPython as IP
@@ -22,7 +24,7 @@ parser.add_argument('--dropout', type=float, default=0.05,
                     help='dropout applied to layers (default: 0.05)')
 parser.add_argument('--clip', type=float, default=-1,
                     help='gradient clip, -1 means no clip (default: -1)')
-parser.add_argument('--epochs', type=int, default=30,
+parser.add_argument('--epochs', type=int, default=150,
                     help='upper epoch limit (default: 30)')
 parser.add_argument('--ksize', type=int, default=7,
                     help='kernel size (default: 7)')
@@ -181,14 +183,15 @@ def test():
     model.eval()
     pred = []
     for i in xrange(x_test.shape[0]):
-        data, target = x_test[i], torch.FloatTensor([y_test[i]])
+        data, target = x_test[i], y_test[i]
         if args.cuda: data, target = data.cuda(), target.cuda()
 
         data, target = Variable(data, volatile=True), Variable(target)
         if (batch_size == 1): data = data.unsqueeze(0) # TCN works with a 3D tensor
 
         output = model(data)
-        pred.append(output.data.cpu().numpy()[0,0])
+        if (batch_size != 1): output = output.squeeze(1)
+        pred.append(output.data.cpu().numpy())
 
     sq_err = get_corr(y_test, pred)
     return pred, sq_err
@@ -201,9 +204,20 @@ def get_corr(y_test, y_test_pred):
     return r2
 
 def save_model():
-    model_name = 'saved_models/'+ file_name[12] + '.mat'
-    save_dir = os.getcwd() + '/' + model_name
-    torch.save(model.state_dict(), save_dir)  #SAVE
+    save_dir = os.getcwd() + "/saved_models/"
+    if not os.path.isdir(save_dir):
+        os.mkdir(save_dir)
+
+    date = datetime.datetime.now()
+    date_dir = save_dir + str(date.year) + str(date.month) + str(date.day) + '_' + str(date.hour) + str(date.minute)+ '/'  # Save in todays date.
+    os.mkdir(date_dir)
+    model_name = date_dir + file_name[:-4] + '_lr' + str(lr) + 'seq_length' + str(seq_length) + '_' + str(channel_sizes) + '.pkl'
+    torch.save(model.state_dict(), model_name)  #SAVE
+
+def load_model():
+    load_dir = os.getcwd() + "/saved_models/" + '201934_1950/' + 'N5_171016_NoObstacles_s_matrices_lr2e-05seq_length50_[25, 25, 25, 25, 25, 25, 25, 25].pkl'
+    os.path.exists(load_dir)
+    model.load_state_dict(torch.load(load_dir))  #SAVE
 
 
 def plot_after_predict(X, Y):
@@ -237,3 +251,4 @@ if __name__ == "__main__":
             lr /= 10
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr
+    save_model()
